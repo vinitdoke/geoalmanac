@@ -1,0 +1,16 @@
+archive/
+WARP.md
+.DS_Store
+**/.DS_Store
+__pycache__/
+*.pyc
+
+# Ignore source large photos (we use optimized ones in src/web/photos)
+trails/photos/
+.DS_Store
+**/.DS_Store
+__pycache__/
+*.pyc
+
+# ignore gpx files
+*.gpx

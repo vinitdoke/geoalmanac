@@ -1,0 +1,515 @@
+:root {
+    --bg-color: #0f172a;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --accent-color: #38bdf8;
+    --accent-hover: #0ea5e9;
+    --glass-bg: rgba(15, 23, 42, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --card-bg: rgba(30, 41, 59, 0.5);
+    --font-main: 'Outfit', sans-serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-main);
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    overflow: hidden;
+    /* App-like feel */
+    height: 100vh;
+    width: 100vw;
+}
+
+#app {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    position: relative;
+}
+
+#map-container {
+    flex-grow: 1;
+    height: 100%;
+    z-index: 1;
+}
+
+#map {
+    height: 100%;
+    width: 100%;
+    background-color: #1e293b;
+    /* Fallback */
+}
+
+/* Sidebar styling */
+/* Shared Panel Styling */
+.floating-panel {
+    /* Position relative to container now */
+    position: relative;
+    width: 100%;
+    /* Fill container */
+    max-height: none;
+    /* Let flex handle height */
+    z-index: 1000;
+    padding: 1.5rem;
+    overflow: hidden;
+    /* Prevent panel itself from scrolling */
+
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 24px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass-bg);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+#left-sidebar-container {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    bottom: 20px;
+    width: 350px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    z-index: 1000;
+    pointer-events: none;
+    /* Let clicks pass through gaps */
+}
+
+/* Children need pointer events back */
+#left-sidebar-container>* {
+    pointer-events: auto;
+}
+
+#sidebar {
+    /* Default state: take full height if alone */
+    flex: 1;
+    min-height: 200px;
+    /* Prevent crushing */
+}
+
+/* Children need pointer events back */
+#details-panel {
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    opacity: 1;
+    transform: none;
+    flex: 1;
+    /* Share space when visible */
+    min-height: 300px;
+}
+
+#details-panel.hidden {
+    display: none;
+    /* Remove from flow so sidebar expands */
+    opacity: 0;
+}
+
+/* Photo Album */
+.album-container {
+    display: flex;
+    overflow-x: auto;
+    gap: 12px;
+    padding: 0 4px 12px 4px;
+    /* Small padding for focus rings/shadows */
+    margin-bottom: 20px;
+    margin-top: 10px;
+    /* Space from chart */
+    max-width: 100%;
+    /* Prevent expanding parent */
+
+    /* Scrollbar styling for firefox */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.album-container::-webkit-scrollbar {
+    height: 6px;
+}
+
+.album-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+}
+
+.album-photo {
+    height: 100px;
+    /* Smaller height to match chart region better */
+    width: auto;
+    /* Maintain aspect ratio */
+    border-radius: 12px;
+    cursor: pointer;
+    border: 1px solid var(--glass-border);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+    object-fit: cover;
+    /* Ensure clean fill if width constrained (though width is auto) */
+}
+
+.album-photo:hover {
+    transform: scale(1.05);
+    border-color: var(--accent-color);
+}
+
+/* Scrollable content wrapper for details */
+#details-content {
+    overflow-y: auto;
+    flex-grow: 1;
+    padding-right: 5px;
+    /* Space for scrollbar */
+}
+
+#details-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+#details-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+header h1 {
+    font-weight: 700;
+    font-size: 2rem;
+    background: linear-gradient(135deg, #fff 0%, #cbd5e1 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 400;
+    margin-top: 0.25rem;
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.stat-card {
+    background: var(--card-bg);
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    text-align: center;
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--accent-color);
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* Sidebar Content Wrapper */
+#sidebar-content {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding-right: 5px;
+    /* Space for scrollbar */
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    /* Gap between stats and list */
+    margin-top: 1rem;
+}
+
+#sidebar-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+#sidebar-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+/* Hike List */
+.hike-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* No longer handles scrolling or flex-grow itself */
+}
+
+.hike-item {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.hike-item:hover,
+.hike-item.active {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--glass-border);
+    transform: translateY(-2px);
+}
+
+.hike-item h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hike-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* Scrollbar */
+.hike-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.hike-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.hike-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+.hike-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Mobile Optimization */
+@media (max-width: 768px) {
+    #left-sidebar-container {
+        top: auto;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 50vh;
+        z-index: 1000;
+        padding: 0 10px 20px 10px;
+    }
+
+    .floating-panel {
+        border-radius: 20px 20px 0 0;
+        border-bottom: none;
+        box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    #details-panel {
+        min-height: 0;
+        /* Allow it to collapse if needed content-wise */
+    }
+
+    /* Adjust map center or padding if needed via JS, but CSS can help visibility */
+    #map-container {
+        height: 100%;
+        /* Map stays full, panel overlays it */
+    }
+
+    /* Mobile: Specific behavior */
+    .close-btn {
+        display: block !important;
+        /* Force show on mobile */
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.5);
+        /* Darker background for visibility */
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #fff;
+        font-size: 1.5rem;
+        cursor: pointer;
+        padding: 5px 12px;
+        /* Larger hit area */
+        border-radius: 8px;
+        line-height: 1;
+        z-index: 9999;
+        /* Max z-index */
+        backdrop-filter: blur(4px);
+    }
+
+    #detail-title {
+        margin-top: 40px;
+        /* Space for button */
+    }
+
+    /* When details are open on mobile, hide the sidebar list */
+    .details-open #sidebar {
+        display: none !important;
+    }
+
+    .details-open #details-panel {
+        height: 100%;
+        /* Take full available height in container */
+        min-height: 100%;
+    }
+}
+
+/* Default Close Button (Hidden on Desktop per request) */
+/* Thumbnails */
+.hike-item {
+    display: flex;
+    /* Flex layout to hold items */
+    align-items: center;
+    gap: 12px;
+}
+
+.hike-thumbnail {
+    width: 60px;
+    height: 60px;
+    background-size: cover;
+    background-position: center;
+    border-radius: 8px;
+    flex-shrink: 0;
+    border: 1px solid var(--glass-border);
+}
+
+.hike-info {
+    flex-grow: 1;
+    min-width: 0;
+    /* Allow text truncate */
+}
+
+/* Photo Markers */
+.photo-marker-icon {
+    font-size: 1.2rem;
+    text-align: center;
+    line-height: 24px;
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+}
+
+/* Leaflet Popup Customizations */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+}
+
+.leaflet-popup-content {
+    margin: 0 !important;
+    line-height: 0;
+}
+
+.leaflet-popup-content img {
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.leaflet-popup-close-button {
+    background: rgba(0, 0, 0, 0.5) !important;
+    border-radius: 50%;
+    color: white !important;
+    width: 24px !important;
+    height: 24px !important;
+    line-height: 24px !important;
+    text-align: center;
+    font-size: 16px !important;
+    top: -8px !important;
+    right: -8px !important;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(4px);
+    padding: 0 !important;
+}
+
+.leaflet-popup-close-button:hover {
+    background: rgba(0, 0, 0, 0.7) !important;
+    color: #fff !important;
+}
+
+/* Mobile Controls */
+.mobile-controls {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .mobile-controls {
+        display: flex;
+        gap: 12px;
+        /* Space between buttons */
+        margin-bottom: 12px;
+        /* Space below controls */
+        margin-left: 0;
+        pointer-events: auto;
+        /* Ensure clickable */
+    }
+
+    .mobile-control-btn {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 48px;
+        height: 48px;
+        padding: 0;
+
+        /* Unified Glass Style */
+        background: var(--glass-bg);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+
+        color: var(--accent-color);
+        font-size: 1.2rem;
+        cursor: pointer;
+
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        transition: all 0.2s ease;
+    }
+
+    .mobile-control-btn:hover {
+        background: rgba(30, 41, 59, 0.9);
+        /* Darker on hover */
+        border-color: var(--accent-color);
+        transform: translateY(-1px);
+    }
+
+    .mobile-control-btn:active {
+        transform: translateY(0);
+    }
+
+    .mobile-control-btn.hidden {
+        display: none !important;
+    }
+
+    /* Sidebar can be swiped/toggled down */
+    #left-sidebar-container {
+        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    #left-sidebar-container.minimized {
+        /* Stick out just enough for the buttons (~48px + margin + padding) */
+        /* Buttons height 48px + 12px margin = 60px */
+        /* Let's say 64px to be safe */
+        transform: translateY(calc(100% - 64px)) !important;
+    }
+}
