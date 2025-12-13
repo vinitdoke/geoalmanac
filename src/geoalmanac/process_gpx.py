@@ -8,23 +8,50 @@ import gpxpy
 import math
 from PIL import Image, ImageOps
 from PIL.ExifTags import TAGS, GPSTAGS
+import pillow_heif
+
+pillow_heif.register_heif_opener()
 
 def get_exif_data(image):
     """Returns a dictionary from the exif data of an PIL Image item. Also converts the GPS Tags"""
     exif_data = {}
-    info = image._getexif()
-    if info:
-        for tag, value in info.items():
-            decoded = TAGS.get(tag, tag)
-            if decoded == "GPSInfo":
-                gps_data = {}
-                for t in value:
-                    sub_decoded = GPSTAGS.get(t, t)
-                    gps_data[sub_decoded] = value[t]
-                
-                exif_data[decoded] = gps_data
-            else:
+    try:
+        # Use getexif() which is more standard and supports HEIC/DNG
+        exif = image.getexif()
+        if exif:
+            for tag, value in exif.items():
+                decoded = TAGS.get(tag, tag)
                 exif_data[decoded] = value
+
+            # Extract GPS Info from the GPS IFD (tag 0x8825 / 34853)
+            gps_info = exif.get_ifd(0x8825)
+            if gps_info:
+                gps_data = {}
+                for t, value in gps_info.items():
+                    sub_decoded = GPSTAGS.get(t, t)
+                    gps_data[sub_decoded] = value
+                
+                exif_data["GPSInfo"] = gps_data
+    except Exception as e:
+        print(f"Error extracting EXIF: {e}")
+    
+    # Fallback to _getexif for JPEGs if getexif missed something (rare but possible) or for old Pillow/JPEG handling
+    if not exif_data and hasattr(image, "_getexif"):
+        try:
+            info = image._getexif()
+            if info:
+                for tag, value in info.items():
+                    decoded = TAGS.get(tag, tag)
+                    if decoded == "GPSInfo":
+                        gps_data = {}
+                        for t in value:
+                            sub_decoded = GPSTAGS.get(t, t)
+                            gps_data[sub_decoded] = value[t]
+                        exif_data[decoded] = gps_data
+                    else:
+                        exif_data[decoded] = value
+        except Exception:
+            pass
 
     return exif_data
 
@@ -116,9 +143,58 @@ def process_gpx_files(trails_dir: Path, output_file: Path):
                         "photos": [] # Initialize photo list
                     }
                     
+                    
                     # Add date if available (from first point of first segment)
+                    date_found = None
                     if track.segments and track.segments[0].points and track.segments[0].points[0].time:
-                        hike_data["date"] = track.segments[0].points[0].time.isoformat()
+                        date_found = track.segments[0].points[0].time
+                    
+                    
+                    # If date is missing or is 1970 (invalid/default), look elsewhere
+                    if not date_found or date_found.year <= 1970:
+                        # Try GPX metadata
+                        if gpx.time and gpx.time.year > 1970:
+                            date_found = gpx.time
+                        # Try Waypoints
+                        elif gpx.waypoints:
+                            # Use earliest waypoint time
+                            valid_wpts = [w.time for w in gpx.waypoints if w.time and w.time.year > 1970]
+                            if valid_wpts:
+                                date_found = min(valid_wpts)
+                    
+                    # Last resort: Regex search in raw file content if gpxpy failed to parse weird timestamps
+                    if not date_found or date_found.year <= 1970:
+                        import re
+                        # Read file raw content
+                        try:
+                            with open(file_path, 'r') as f:
+                                raw_content = f.read()
+                                # Look for 202x- timestamps
+                                matches = re.findall(r'<time>(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*?)</time>', raw_content)
+                                for m in matches:
+                                    if m.startswith("20") and not m.startswith("1970"): # Simple check for 21st century
+                                        # Manually parse or just take the string if we just need date
+                                        # But we need a datetime object or iso format for consistency.
+                                        # Attempt to parse strictly or loosely
+                                        try:
+                                            # Clean up the weird suffix if present (e.g. Z.319Z -> .319Z)
+                                            # The generic dateutil parser is good for this.
+                                            # Or just simple string slicing if we trust the beginning.
+                                            from dateutil import parser
+                                            # Pre-cleaning: Remove 'Z' if it appears before fractional seconds or duplicates?
+                                            # '2025-12-12T13:31:51Z.319Z'
+                                            # If we just need the Date, slicing is enough.
+                                            dt = parser.parse(m, fuzzy=True)
+                                            if dt.year > 1970:
+                                                date_found = dt
+                                                break
+                                        except:
+                                            continue
+                        except Exception as e:
+                            pass
+
+                    if date_found:
+                         hike_data["date"] = date_found.isoformat()
                     
                     hikes.append(hike_data)
                     print(f"Processed: {hike_data['name']}")
@@ -129,7 +205,15 @@ def process_gpx_files(trails_dir: Path, output_file: Path):
     # Process Photos
     photos_dir = trails_dir / "photos"
     if photos_dir.exists():
-        photo_files = sorted(list(photos_dir.glob("*.jpg")) + list(photos_dir.glob("*.jpeg")) + list(photos_dir.glob("*.png")))
+        extensions = ["*.jpg", "*.jpeg", "*.png", "*.heic", "*.dng"]
+        # Add uppercase variants just in case
+        extensions += [ext.upper() for ext in extensions]
+        
+        photo_files = []
+        for ext in extensions:
+            photo_files.extend(photos_dir.glob(ext))
+        
+        photo_files = sorted(photo_files)
         print(f"Found {len(photo_files)} photos in {photos_dir}")
         
         for photo_path in photo_files:
@@ -171,7 +255,8 @@ def process_gpx_files(trails_dir: Path, output_file: Path):
                         dest_dir = output_file.parent.parent / "photos"
                         dest_dir.mkdir(parents=True, exist_ok=True)
                          
-                        dest_path = dest_dir / photo_path.name
+                        # Ensure extension is .jpg
+                        dest_path = dest_dir / photo_path.with_suffix(".jpg").name
                          
                         # Optimize Image
                         try:
@@ -188,13 +273,12 @@ def process_gpx_files(trails_dir: Path, output_file: Path):
                             
                             # Save optimized (default save behavior for JPEG drops EXIF unless explicit, but clearing info confirms it)
                             image.save(dest_path, "JPEG", quality=85, optimize=True)
-                            print(f"Compressed and saved {photo_path.name}")
+                            print(f"Compressed and saved {dest_path.name}")
                         except Exception as e:
-                            print(f"Error compressing {photo_path.name}, falling back to copy: {e}")
-                            import shutil
-                            shutil.copy2(photo_path, dest_path)
+                            print(f"Error compressing {photo_path.name}, skipping: {e}")
+                            continue
                         
-                        photo_url = f"photos/{photo_path.name}"
+                        photo_url = f"photos/{dest_path.name}"
                         
                         closest_hike["photos"].append({
                             "url": photo_url,
