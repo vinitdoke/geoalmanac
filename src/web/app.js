@@ -43,6 +43,7 @@ let elevationMarker = null;
 let photoMarkers = L.layerGroup(); // Store photo markers
 let startEndMarkers = L.layerGroup(); // Store start/end markers
 let coloredTrackLayer = null; // Store the gradient track
+let activePhotoMarkers = new Map(); // Map url -> marker layer
 
 // UI Elements
 const detailsPanel = document.getElementById('details-panel');
@@ -359,10 +360,18 @@ function renderDetails(hike) {
             img.src = photo.url;
             img.className = 'album-photo';
             img.loading = 'lazy';
-            img.onclick = () => {
-                // Determine if desktop or mobile?
-                // Just open full size in new tab for now, or use a lightbox later
-                window.open(photo.url, '_blank');
+            img.onclick = (e) => {
+                e.stopPropagation();
+                // Find and activate marker
+                const marker = activePhotoMarkers.get(photo.url);
+                if (marker) {
+                    // Pan to marker
+                    map.flyTo(marker.getLatLng(), 15); // Adjust zoom if needed
+                    marker.openPopup();
+                } else {
+                    // Fallback just in case
+                    window.open(photo.url, '_blank');
+                }
             };
             albumContainer.appendChild(img);
         });
@@ -402,6 +411,7 @@ function renderDetails(hike) {
 
 function renderPhotoMarkers(hike) {
     photoMarkers.clearLayers();
+    activePhotoMarkers.clear();
 
     if (hike.photos) {
         // Collect critical points to avoid (Start, End, Peak)
@@ -445,6 +455,7 @@ function renderPhotoMarkers(hike) {
             const marker = L.marker([lat, lon], { icon: photoIcon });
             marker.bindPopup(`<img src="${photo.url}" style="max-width: 200px; border-radius: 8px;">`);
             photoMarkers.addLayer(marker);
+            activePhotoMarkers.set(photo.url, marker);
         });
         photoMarkers.addTo(map);
     }
