@@ -164,12 +164,87 @@ def parse_kmz(kmz_path, gpx_path=None):
         if ele_diff > 0:
             total_uphill += ele_diff
 
+    # Date from filename or first point
+    # Filename format: "January 24, 2026 - ..."
+    date_str = "2026-01-01" # Default
+    default_name = hike_name # Fallback
+    
+    try:
+        # "January 24, 2026 - Yuzawa Nakazato..."
+        parts = Path(kmz_path).stem.split(' - ')
+        
+        # Try parse date
+        if len(parts) >= 1:
+            date_part = parts[0]
+            try:
+                dt = datetime.strptime(date_part, "%B %d, %Y")
+                date_str = dt.strftime("%Y-%m-%d")
+            except ValueError:
+                # Try 24-hr format or other locale?
+                # "February 1, 2026"
+                pass
+                
+        # Improve default name if parts[1] exists
+        if len(parts) >= 2:
+            default_name = parts[1]
+            
+    except Exception as e:
+        print(f"Could not parse filename metadata: {e}")
+
+    # Use KML name if valid, else default
+    if doc_name is not None and doc_name.text and doc_name.text.strip():
+        hike_name = doc_name.text.strip()
+    else:
+        hike_name = default_name
+
+    
+    # Calculate Duration
+    total_duration = 0
+    all_timestamps = []
+    
+    # helper to parse kml timestamps like 2026-01-31T15:47:17+09:00
+    def parse_ts(t):
+        try:
+            return datetime.fromisoformat(t)
+        except:
+             return None
+
+    # Collect timestamps from segments
+    # Note: segments points is just [lat, lon, ele] so we lost timestamps there
+    # But we iterate 'placemarks' earlier.
+    # To fix this cleanly without re-iterating, let's just re-iterate placemarks or 
+    # extract timestamps during invalidation above.
+    
+    # Actually, we didn't store timestamps in "all_points".
+    # Let's verify if we need to store them or just min/max.
+    # We need total duration = end - start of the whole day? Or moving time?
+    # Slopes exports might have gaps.
+    # "Total Time" usually implies (Last Point Time - First Point Time).
+    # "Moving Time" is harder. 
+    # Let's go with Total Duration for now (Max - Min).
+    
+    min_time = None
+    max_time = None
+    
+    for pm in placemarks:
+        track = pm.find('.//gx:Track', NS)
+        if track is not None:
+             whens = track.findall('kml:when', NS)
+             for w in whens:
+                 dt = parse_ts(w.text)
+                 if dt:
+                     if min_time is None or dt < min_time: min_time = dt
+                     if max_time is None or dt > max_time: max_time = dt
+                     
+    if min_time and max_time:
+        total_duration = (max_time - min_time).total_seconds()
+
     result = {
         "name": hike_name,
-        "date": "2026-01-24", # Simplified as we know date
+        "date": date_str,
         "length_2d": round(total_dist, 2),
         "uphill": round(total_uphill, 2),
-        "duration": 0, 
+        "duration": total_duration, 
         "points": all_points,
         "segments": segments,
         "photos": [] 
