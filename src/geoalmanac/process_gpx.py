@@ -10,6 +10,19 @@ from PIL import Image, ImageOps
 from PIL.ExifTags import TAGS, GPSTAGS
 import pillow_heif
 
+# Try importing local module
+try:
+    import process_ski_data
+except ImportError:
+    # If running from different context, try relative
+    try:
+        from . import process_ski_data
+    except ImportError:
+        # Fallback for direct script execution in some envs
+        import sys
+        sys.path.append(str(Path(__file__).parent))
+        import process_ski_data
+
 pillow_heif.register_heif_opener()
 
 def get_exif_data(image):
@@ -100,7 +113,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     
     return R * c
 
-def process_gpx_files(trails_dir: Path, output_file: Path):
+def process_gpx_files(trails_dir: Path, output_file: Path, ski_dir: Path = None):
     hikes = []
     
     # Ensure output directory exists
@@ -110,7 +123,7 @@ def process_gpx_files(trails_dir: Path, output_file: Path):
     
     print(f"Found {len(gpx_files)} GPX files in {trails_dir}")
 
-    # Process all Hikes first
+    # Process all Hiking GPX
     for file_path in gpx_files:
         try:
             with open(file_path, 'r') as gpx_file:
@@ -197,115 +210,139 @@ def process_gpx_files(trails_dir: Path, output_file: Path):
                          hike_data["date"] = date_found.isoformat()
                     
                     hikes.append(hike_data)
-                    print(f"Processed: {hike_data['name']}")
+                    print(f"Processed Hike: {hike_data['name']}")
                         
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
 
-    # Process Photos
-    photos_dir = trails_dir / "photos"
-    if photos_dir.exists():
-        extensions = ["*.jpg", "*.jpeg", "*.png", "*.heic", "*.dng"]
-        # Add uppercase variants just in case
-        extensions += [ext.upper() for ext in extensions]
+    # Process Skiing Data
+    if ski_dir and ski_dir.exists():
+        kmz_files = sorted(glob.glob(str(ski_dir / "*.kmz")))
+        print(f"Found {len(kmz_files)} KMZ files in {ski_dir}")
         
-        photo_files = []
-        for ext in extensions:
-            photo_files.extend(photos_dir.glob(ext))
-        
-        photo_files = sorted(photo_files)
-        print(f"Found {len(photo_files)} photos in {photos_dir}")
-        
-        for photo_path in photo_files:
+        for kmz_path in kmz_files:
             try:
-                image = Image.open(photo_path)
-                exif_data = get_exif_data(image)
-                lat, lon = get_lat_lon(exif_data)
+                # Look for parallel GPX file with same name
+                gpx_path = Path(kmz_path).with_suffix(".gpx")
+                gpx_arg = None
+                if gpx_path.exists():
+                     gpx_arg = str(gpx_path)
+                else: 
+                     # Try searching for "raw gps" variant if exact match fails? 
+                     # Or assuming user renames?
+                     # Workflow says: Move both files. Usually filenames might differ slightly 
+                     # e.g. "Trip.kmz" and "Trip - raw gps.gpx"
+                     # Let's try a glob match if exact match fails
+                     stem = Path(kmz_path).stem
+                     candidates = list(ski_dir.glob(f"{stem}*.gpx"))
+                     if candidates:
+                         gpx_arg = str(candidates[0])
                 
-                if lat and lon:
-                    # Find closest hike
-                    min_dist = float('inf')
-                    closest_hike = None
-                    
-                    for hike in hikes:
-                        # Optimization: Check bounding box or center first? 
-                        # For now, simplistic approach: check some points or all points?
-                        # Checking ALL points is expensive O(N*M).
-                        # Let's check distance to every 10th point to speed up
-                        for point in hike["points"][::10]:
-                            dist = haversine_distance(lat, lon, point[0], point[1])
-                            if dist < min_dist:
-                                min_dist = dist
-                                closest_hike = hike
-                    
-                    # If reasonably close (e.g. within 500m? or just closest?)
-                    # Let's say 2km matching radius to be safe against GPS drift/offsets
-                    if closest_hike and min_dist < 2000:
-                         # Copy photo to web accessible dir? 
-                         # Or just reference relative path if web server serves root.
-                         # Since simple http server is at root, we can link effectively.
-                         # Need to make sure photo path is relative to index.html (in src/web)
-                         # Actually, src/web is served. trails/ is outside src/web.
-                         # We should copy/symlink photos or output hikes.json with corrected paths?
-                         # BEST APPROACH: Symlink 'trails/photos' to 'src/web/data/photos' or just configure server?
-                         # Server is running in root, serve dir is src/web.
-                         # So 'trails' folder is NOT accessible via http://localhost:8000/trails
-                         # We must move/copy photos to src/web/photos for them to be visible.
-                         
-                        dest_dir = output_file.parent.parent / "photos"
-                        dest_dir.mkdir(parents=True, exist_ok=True)
-                         
-                        # Ensure extension is .jpg
-                        dest_path = dest_dir / photo_path.with_suffix(".jpg").name
-                         
-                        # Optimize Image
-                        try:
-                            # Auto-rotate based on EXIF
-                            image = ImageOps.exif_transpose(image)
-                            
-                            # Strip metadata: Create a new image data container to be safe, 
-                            # or simply clearing info handles most cases in Pillow.
-                            # exif_transpose returns a copy, we can just clear .info
-                            image.info.clear()
-                            
-                            # Resize to max 1024px
-                            image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
-                            
-                            # Save optimized (default save behavior for JPEG drops EXIF unless explicit, but clearing info confirms it)
-                            image.save(dest_path, "JPEG", quality=85, optimize=True)
-                            print(f"Compressed and saved {dest_path.name}")
-                        except Exception as e:
-                            print(f"Error compressing {photo_path.name}, skipping: {e}")
-                            continue
-                        
-                        photo_url = f"photos/{dest_path.name}"
-                        
-                        closest_hike["photos"].append({
-                            "url": photo_url,
-                            "lat": lat,
-                            "lon": lon
-                        })
-                        
-                        print(f"Matched {photo_path.name} to {closest_hike['name']} ({int(min_dist)}m)")
-                else:
-                    print(f"No GPS in {photo_path.name}")
-                    
+                # Process
+                ski_data = process_ski_data.parse_kmz(kmz_path, gpx_arg)
+                hikes.append(ski_data)
+                print(f"Processed Ski Trip: {ski_data['name']}")
+                
             except Exception as e:
-                print(f"Error processing photo {photo_path}: {e}")
+                 print(f"Error processing ski file {kmz_path}: {e}")
 
-    # Set Thumbnails
-    for hike in hikes:
-        if hike["photos"]:
-            hike["thumbnail"] = hike["photos"][0]["url"] 
+    # Process Photos & Write Output (Existing Logic)
+    # ... (Need to ensure photos directory is correct, maybe use trails/photos for now or add ski_dir/photos?)
+    
+    # Process Photos (Trails)
+    photos_dir = trails_dir / "photos"
+    process_photos(hikes, photos_dir, output_file)
+
+    # Process Photos (Skiing - Optional)
+    if ski_dir:
+        process_photos(hikes, ski_dir / "photos", output_file)
 
     with open(output_file, 'w') as f:
         json.dump(hikes, f, indent=2)
     
     print(f"Successfully wrote {len(hikes)} hikes to {output_file}")
 
+
+def process_photos(hikes, photos_dir, output_file):
+    if not photos_dir.exists():
+        return
+
+    extensions = ["*.jpg", "*.jpeg", "*.png", "*.heic", "*.dng"]
+    extensions += [ext.upper() for ext in extensions]
+    
+    photo_files = []
+    for ext in extensions:
+        photo_files.extend(photos_dir.glob(ext))
+    
+    photo_files = sorted(photo_files)
+    print(f"Found {len(photo_files)} photos in {photos_dir}")
+    
+    dest_dir_root = output_file.parent.parent / "photos"
+    dest_dir_root.mkdir(parents=True, exist_ok=True)
+
+    for photo_path in photo_files:
+        try:
+            image = Image.open(photo_path)
+            exif_data = get_exif_data(image)
+            lat, lon = get_lat_lon(exif_data)
+            
+            if lat and lon:
+                # Find closest hike
+                min_dist = float('inf')
+                closest_hike = None
+                
+                for hike in hikes:
+                    # Optimize check: Every 10th point
+                    points = hike.get("points", [])
+                    if not points: continue
+                    
+                    for point in points[::10]:
+                        dist = haversine_distance(lat, lon, point[0], point[1])
+                        if dist < min_dist:
+                            min_dist = dist
+                            closest_hike = hike
+                
+                if closest_hike and min_dist < 2000:
+                    # Save optimized photo
+                    dest_path = dest_dir_root / photo_path.with_suffix(".jpg").name
+                    
+                    # Check if already exists to avoid re-compressing? (Optional optimizing)
+                    if not dest_path.exists():
+                        try:
+                            image = ImageOps.exif_transpose(image)
+                            image.info.clear()
+                            image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                            image.save(dest_path, "JPEG", quality=85, optimize=True)
+                            print(f"Compressed {dest_path.name}")
+                        except Exception as e:
+                            print(f"Error compressing {photo_path.name}: {e}")
+                            continue
+                    
+                    photo_url = f"photos/{dest_path.name}"
+                    
+                    # Avoid duplicates if running multiple times? (List is rebuilt each time though)
+                    closest_hike["photos"].append({
+                        "url": photo_url,
+                        "lat": lat,
+                        "lon": lon
+                    })
+                    
+                    print(f"Matched {photo_path.name} to {closest_hike['name']} ({int(min_dist)}m)")
+            else:
+                pass 
+                
+        except Exception as e:
+            print(f"Error processing photo {photo_path}: {e}")
+
+    # Set Thumbnails
+    for hike in hikes:
+        if hike["photos"]:
+            hike["thumbnail"] = hike["photos"][0]["url"] 
+
 if __name__ == "__main__":
     base_dir = Path(__file__).parent.parent.parent
     trails_dir = base_dir / "trails"
+    ski_dir = base_dir / "ski_tracks"
     output_file = base_dir / "src" / "web" / "data" / "hikes.json"
     
-    process_gpx_files(trails_dir, output_file)
+    process_gpx_files(trails_dir, output_file, ski_dir)
