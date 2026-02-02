@@ -153,28 +153,82 @@ async function loadHikes() {
 }
 
 function updateStats() {
-    const totalDistance = hikesData.reduce((acc, hike) => acc + hike.length_2d, 0) / 1000; // km
-    const totalElevation = hikesData.reduce((acc, hike) => acc + hike.uphill, 0); // m
+    // Separate Data
+    const hikes = hikesData.filter(h => !h.segments || h.segments.length === 0);
+    const skis = hikesData.filter(h => h.segments && h.segments.length > 0);
+
+    // Helpers
+    const calcDist = (data) => data.reduce((acc, h) => acc + h.length_2d, 0) / 1000;
+    const calcElev = (data) => data.reduce((acc, h) => acc + h.uphill, 0);
 
     const statsContainer = document.getElementById('stats-summary');
-    statsContainer.innerHTML = `
-        <div class="stat-card">
-            <span class="stat-value">${hikesData.length}</span>
-            <span class="stat-label">Hikes</span>
+
+    // Hiking Stats
+    const hDist = calcDist(hikes);
+    const hElev = calcElev(hikes);
+    const hAvg = hikes.length > 0 ? hDist / hikes.length : 0;
+
+    // Skiing Stats
+    const sDist = calcDist(skis);
+    const sElev = calcElev(skis);
+    const sAvg = skis.length > 0 ? sDist / skis.length : 0;
+
+    let html = '';
+
+    // Hiking Section
+    if (hikes.length > 0) {
+        html += `<h3 class="stats-section-header">Hiking 🥾</h3>`;
+        html += `
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-value">${hikes.length}</span>
+                <span class="stat-label">Hikes</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">${hDist.toFixed(1)} km</span>
+                <span class="stat-label">Total Dist</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">${hElev.toFixed(0)} m</span>
+                <span class="stat-label">Elevation</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">${hAvg.toFixed(1)} km</span>
+                <span class="stat-label">Avg Dist</span>
+            </div>
         </div>
-        <div class="stat-card">
-            <span class="stat-value">${totalDistance.toFixed(1)} km</span>
-            <span class="stat-label">Total Dist</span>
+        `;
+    }
+
+    // Skiing Section
+    if (skis.length > 0) {
+        // Add spacing if both exist
+        if (hikes.length > 0) html += `<div style="height: 24px;"></div>`;
+
+        html += `<h3 class="stats-section-header">Skiing ⛷️</h3>`;
+        html += `
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-value">${skis.length}</span>
+                <span class="stat-label">Trips</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">${sDist.toFixed(1)} km</span>
+                <span class="stat-label">Total Dist</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">${sElev.toFixed(0)} m</span>
+                <span class="stat-label">Vertical</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">${sAvg.toFixed(1)} km</span>
+                <span class="stat-label">Avg Dist</span>
+            </div>
         </div>
-        <div class="stat-card">
-            <span class="stat-value">${totalElevation.toFixed(0)} m</span>
-            <span class="stat-label">Elevation Gain</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-value">${(totalDistance / hikesData.length).toFixed(1)} km</span>
-            <span class="stat-label">Avg Dist</span>
-        </div>
-    `;
+        `;
+    }
+
+    statsContainer.innerHTML = html;
 }
 
 function renderHikesList() {

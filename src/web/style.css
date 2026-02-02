@@ -513,3 +513,17 @@ header h1 {
         transform: translateY(calc(100% - 64px)) !important;
     }
 }
+/* Stats Sections */
+.stats-section-header {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 12px;
+    margin-top: 4px; /* Slight top margin for visual balance */
+    padding-left: 2px; /* Align with card edge roughly */
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
