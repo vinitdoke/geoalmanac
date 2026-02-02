@@ -14,3 +14,6 @@ __pycache__/
 
 # ignore gpx files
 *.gpx
+
+# Ignore skiing raw data
+ski_tracks_original/

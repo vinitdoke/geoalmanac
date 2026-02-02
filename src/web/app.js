@@ -100,7 +100,13 @@ function closeDetails() {
     detailsPanel.classList.add('hidden');
     sidebarContainer.classList.remove('details-open');
     if (activeLayer) {
-        activeLayer.setStyle({ weight: 6, opacity: 0.9, color: '#38bdf8' });
+        activeLayer.eachLayer(l => {
+            if (l.options.dashArray) { // Lift
+                l.setStyle({ weight: 3, opacity: 0.7, color: '#94a3b8' });
+            } else {
+                l.setStyle({ weight: 6, opacity: 0.9, color: '#38bdf8' });
+            }
+        });
         activeLayer = null;
     }
     if (elevationMarker) {
@@ -206,31 +212,66 @@ function renderAllHikes() {
     const bounds = L.latLngBounds([]);
 
     hikesData.forEach((hike, index) => {
-        // Points in GPX are [lat, lon, ele]
-        // Leaflet expects [lat, lon]
-        const latLngs = hike.points.map(p => [p[0], p[1]]);
+        const layerGroup = L.layerGroup();
+        const hikeBounds = L.latLngBounds([]);
 
-        const polyline = L.polyline(latLngs, {
-            color: '#38bdf8',
-            weight: 6,
-            opacity: 0.9
-        }).addTo(map);
+        if (hike.segments) {
+            hike.segments.forEach(segment => {
+                const latLngs = segment.points.map(p => [p[0], p[1]]);
+                hikeBounds.extend(latLngs);
 
-        polyline.on('click', () => focusHike(index));
-        polyline.on('mouseover', () => {
-            polyline.setStyle({ weight: 8, opacity: 1, color: '#0ea5e9' });
+                let style = {
+                    color: '#38bdf8',
+                    weight: 6,
+                    opacity: 0.9
+                };
+
+                if (segment.type === 'lift') {
+                    style.color = '#94a3b8';
+                    style.weight = 3;
+                    style.dashArray = '5, 8';
+                    style.opacity = 0.7;
+                }
+
+                L.polyline(latLngs, style).addTo(layerGroup);
+            });
+        } else {
+            // Standard flat track
+            const latLngs = hike.points.map(p => [p[0], p[1]]);
+            L.polyline(latLngs, {
+                color: '#38bdf8',
+                weight: 6,
+                opacity: 0.9
+            }).addTo(layerGroup);
+            hikeBounds.extend(latLngs);
+        }
+
+        layerGroup.addTo(map);
+        bounds.extend(hikeBounds);
+
+        // Interaction logic (apply to the whole group matches)
+        layerGroup.eachLayer(layer => {
+            layer.on('click', () => focusHike(index));
+            layer.on('mouseover', () => {
+                if (activeLayer !== layerGroup) {
+                    layer.setStyle({ weight: layer.options.weight + 2, opacity: 1 });
+                }
+            });
+            layer.on('mouseout', () => {
+                if (activeLayer !== layerGroup) {
+                    if (layer.options.dashArray) { // Lift
+                        layer.setStyle({ weight: 3, opacity: 0.7 });
+                    } else {
+                        layer.setStyle({ weight: 6, opacity: 0.9 });
+                    }
+                }
+            });
         });
-        polyline.on('mouseout', () => {
-            if (activeLayer !== polyline) {
-                polyline.setStyle({ weight: 6, opacity: 0.9, color: '#38bdf8' });
-            }
-        });
 
-        hikeLayers.set(index, polyline);
-        bounds.extend(latLngs);
+        hikeLayers.set(index, layerGroup);
     });
 
-    if (hikesData.length > 0) {
+    if (hikesData.length > 0 && bounds.isValid()) {
         map.fitBounds(bounds, { padding: [50, 50] });
     }
 }
@@ -241,15 +282,23 @@ function focusHike(index) {
 
     // Reset previous active layer style
     if (activeLayer && activeLayer !== layer) {
-        activeLayer.setStyle({ weight: 6, opacity: 0.9, color: '#38bdf8' });
+        activeLayer.eachLayer(l => {
+            if (l.options.dashArray) { // Lift
+                l.setStyle({ weight: 3, opacity: 0.7, color: '#94a3b8' });
+            } else {
+                l.setStyle({ weight: 6, opacity: 0.9, color: '#38bdf8' });
+            }
+        });
     }
 
-    // Highlight new layer (Make it invisible since we draw the gradient on top)
-    // Actually, keep it visible but thinner/transparent as a "glow" or base?
-    // Or just Hide it.
-    // layer.setStyle({ weight: 5, opacity: 1, color: '#f43f5e' }); 
-    layer.setStyle({ opacity: 0 }); // Hide base layer while active
-    layer.bringToFront();
+    // Highlight new layer
+    // For ski segments, we might want to keep lifts visible but hide runs to show the gradient track?
+    // Or just hide everything and redraw?
+    // Let's hide everything in the group to avoid clashes with the "Elevation Track" which will be drawn on top
+    layer.eachLayer(l => l.setStyle({ opacity: 0 }));
+    layer.eachLayer(l => {
+        if (l.bringToFront) l.bringToFront();
+    });
     activeLayer = layer;
 
     // Draw Gradient Track
@@ -303,7 +352,10 @@ function focusHike(index) {
     }
 
     // Zoom to hike
-    map.fitBounds(layer.getBounds(), { padding: [50, 50] });
+    // Handle LayerGroup bounds
+    const bounds = L.latLngBounds([]);
+    layer.eachLayer(l => bounds.extend(l.getBounds()));
+    map.fitBounds(bounds, { padding: [50, 50] });
 
     // Highlight in list
     document.querySelectorAll('.hike-item').forEach((el, i) => {
@@ -570,68 +622,80 @@ function renderChart(hike) {
 function drawElevationTrack(hike) {
     const segments = [];
 
-    for (let i = 0; i < hike.points.length - 1; i++) {
-        const p1 = hike.points[i];
-        const p2 = hike.points[i + 1];
+    // Helper to process a list of points
+    const processPoints = (points, isLift = false) => {
+        for (let i = 0; i < points.length - 1; i++) {
+            const p1 = points[i];
+            const p2 = points[i + 1];
 
-        const dist = map.distance([p1[0], p1[1]], [p2[0], p2[1]]);
-        const eleDiff = p2[2] - p1[2]; // Signed difference
+            const dist = map.distance([p1[0], p1[1]], [p2[0], p2[1]]);
+            const eleDiff = p2[2] - p1[2]; // Signed difference
 
-        let slope = 0;
-        if (dist > 0) {
-            slope = (eleDiff / dist) * 100; // Percent slope
-        }
-
-        // Clamp slope to +/- 30%
-        const maxSlope = 30;
-        let color;
-
-        if (slope >= 0) {
-            // UPHILL: Green (0%) -> Red (30%)
-            const intensity = Math.min(slope / maxSlope, 1.0);
-
-            // Mix Green (0, 255, 0) to Red (255, 0, 0)
-            // Midpoint Yellow (255, 255, 0)
-            if (intensity < 0.5) {
-                // Green to Yellow
-                const r = Math.floor(255 * (intensity * 2));
-                const g = 255;
-                const b = 0;
-                color = `rgb(${r},${g},${b})`;
-            } else {
-                // Yellow to Red
-                const r = 255;
-                const g = Math.floor(255 * (2 - intensity * 2));
-                const b = 0;
-                color = `rgb(${r},${g},${b})`;
+            let slope = 0;
+            if (dist > 0) {
+                slope = (eleDiff / dist) * 100; // Percent slope
             }
-        } else {
-            // DOWNHILL: Green (0%) -> Blue (30%)
-            const intensity = Math.min(Math.abs(slope) / maxSlope, 1.0);
 
-            // Mix Green (0, 255, 0) to Blue (0, 0, 255)
-            // Midpoint Cyan (0, 255, 255)
-            if (intensity < 0.5) {
-                // Green to Cyan
-                const r = 0;
-                const g = 255;
-                const b = Math.floor(255 * (intensity * 2));
-                color = `rgb(${r},${g},${b})`;
-            } else {
-                // Cyan to Blue
-                const r = 0;
-                const g = Math.floor(255 * (2 - intensity * 2));
-                const b = 255;
-                color = `rgb(${r},${g},${b})`;
+            // Override for lifts/missing elevation
+            if (isLift || (p1[2] === 0 && p2[2] === 0)) {
+                // If lift, grey dashed. If flat/missing elevation, just blue/green?
+                // Actually if it's a lift, we want specific styling.
             }
-        }
 
-        segments.push(L.polyline([[p1[0], p1[1]], [p2[0], p2[1]]], {
-            color: color,
-            weight: 5,
-            opacity: 1,
-            interactive: false
-        }));
+            // Clamp slope to +/- 30%
+            const maxSlope = 30;
+            let color;
+
+            if (isLift) {
+                color = '#94a3b8'; // Grey for lifts
+            } else if (slope === 0 && p1[2] === 0) {
+                color = '#38bdf8'; // Default Blue for missing elevation
+            } else if (slope >= 0) {
+                // UPHILL: Green (0%) -> Red (30%)
+                const intensity = Math.min(slope / maxSlope, 1.0);
+                if (intensity < 0.5) {
+                    const r = Math.floor(255 * (intensity * 2));
+                    const g = 255;
+                    const b = 0;
+                    color = `rgb(${r},${g},${b})`;
+                } else {
+                    const r = 255;
+                    const g = Math.floor(255 * (2 - intensity * 2));
+                    const b = 0;
+                    color = `rgb(${r},${g},${b})`;
+                }
+            } else {
+                // DOWNHILL: Green (0%) -> Blue (30%)
+                const intensity = Math.min(Math.abs(slope) / maxSlope, 1.0);
+                if (intensity < 0.5) {
+                    const r = 0;
+                    const g = 255;
+                    const b = Math.floor(255 * (intensity * 2));
+                    color = `rgb(${r},${g},${b})`;
+                } else {
+                    const r = 0;
+                    const g = Math.floor(255 * (2 - intensity * 2));
+                    const b = 255;
+                    color = `rgb(${r},${g},${b})`;
+                }
+            }
+
+            segments.push(L.polyline([[p1[0], p1[1]], [p2[0], p2[1]]], {
+                color: color,
+                weight: isLift ? 3 : 5,
+                opacity: isLift ? 0.7 : 1,
+                dashArray: isLift ? '5, 8' : null,
+                interactive: false
+            }));
+        }
+    };
+
+    if (hike.segments) {
+        hike.segments.forEach(seg => {
+            processPoints(seg.points, seg.type === 'lift');
+        });
+    } else {
+        processPoints(hike.points);
     }
 
     return L.layerGroup(segments);
