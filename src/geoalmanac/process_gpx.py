@@ -143,8 +143,19 @@ def process_gpx_files(trails_dir: Path, output_file: Path, ski_dir: Path = None)
                     # Basic stats (calculated from the whole track)
                     moving_data = track.get_moving_data()
                     
+                    stem = Path(file_path).stem
+                    name_to_use = track.name or stem
+                    if track.name and len(stem) > len(track.name):
+                        # If track name is a substring of the filename, or very generic, prefer the filename
+                        if track.name.lower() in stem.lower().replace(" ", "") or track.name in ["Mount", "Activity", "Hike", "Track"]:
+                            name_to_use = stem
+                    
+                    # Restore colons if we fell back to track.name because it matches but has colon
+                    if track.name and len(stem) == len(track.name) and stem.replace("_", ":") == track.name:
+                        name_to_use = track.name
+
                     hike_data = {
-                        "name": track.name or Path(file_path).stem,
+                        "name": name_to_use,
                         "points": points,
                         "length_2d": track.length_2d(),
                         "duration": track.get_duration(),
