@@ -231,6 +231,7 @@ def process_gpx_files(trails_dir: Path, output_file: Path, ski_dir: Path = None)
         kmz_files = sorted(glob.glob(str(ski_dir / "*.kmz")))
         print(f"Found {len(kmz_files)} KMZ files in {ski_dir}")
         
+        ski_trips = []
         for kmz_path in kmz_files:
             try:
                 # Look for parallel GPX file with same name
@@ -251,11 +252,27 @@ def process_gpx_files(trails_dir: Path, output_file: Path, ski_dir: Path = None)
                 
                 # Process
                 ski_data = process_ski_data.parse_kmz(kmz_path, gpx_arg)
-                hikes.append(ski_data)
-                print(f"Processed Ski Trip: {ski_data['name']}")
+                ski_trips.append(ski_data)
                 
             except Exception as e:
                  print(f"Error processing ski file {kmz_path}: {e}")
+
+        # Group ski trips by mountain name
+        trips_by_name = {}
+        for trip in ski_trips:
+            trips_by_name.setdefault(trip["name"], []).append(trip)
+            
+        # Append ' Day X' to names and add to hikes
+        for name, trips in trips_by_name.items():
+            if len(trips) > 1:
+                # Sort chronologically by date
+                trips.sort(key=lambda x: x.get("date", ""))
+                for i, trip in enumerate(trips, 1):
+                    trip["name"] = f"{name} Day {i}"
+            
+            for trip in trips:
+                hikes.append(trip)
+                print(f"Processed Ski Trip: {trip['name']}")
 
     # Process Photos & Write Output (Existing Logic)
     # ... (Need to ensure photos directory is correct, maybe use trails/photos for now or add ski_dir/photos?)
