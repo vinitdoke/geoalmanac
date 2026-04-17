@@ -2,6 +2,7 @@ import glob
 import json
 import os
 from pathlib import Path
+import urllib.parse
 
 import gpxpy
 
@@ -143,16 +144,19 @@ def process_gpx_files(trails_dir: Path, output_file: Path, ski_dir: Path = None)
                     # Basic stats (calculated from the whole track)
                     moving_data = track.get_moving_data()
                     
-                    stem = Path(file_path).stem
-                    name_to_use = track.name or stem
-                    if track.name and len(stem) > len(track.name):
+                    stem = urllib.parse.unquote(Path(file_path).stem)
+                    track_name = urllib.parse.unquote(track.name) if track.name else None
+                    name_to_use = track_name or stem
+                    if track_name and len(stem) > len(track_name):
                         # If track name is a substring of the filename, or very generic, prefer the filename
-                        if track.name.lower() in stem.lower().replace(" ", "") or track.name in ["Mount", "Activity", "Hike", "Track"]:
+                        if track_name.lower() in stem.lower().replace(" ", "") or track_name in ["Mount", "Activity", "Hike", "Track"]:
                             name_to_use = stem
                     
-                    # Restore colons if we fell back to track.name because it matches but has colon
-                    if track.name and len(stem) == len(track.name) and stem.replace("_", ":") == track.name:
-                        name_to_use = track.name
+                    # Restore colons if we fell back to track_name because it matches but has colon
+                    if track_name and len(stem) == len(track_name) and stem.replace("_", ":") == track_name:
+                        name_to_use = track_name
+                         
+                    name_to_use = urllib.parse.unquote(name_to_use)
 
                     hike_data = {
                         "name": name_to_use,
